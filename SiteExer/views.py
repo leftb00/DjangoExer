@@ -1,8 +1,9 @@
-from django.shortcuts import render, redirect, get_object_or_404
+from django.shortcuts import render, redirect, get_object_or_404, resolve_url
 from django.utils import timezone
 from django.core.paginator import Paginator
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
+from django.db.models import Q
 
 from .models import Question, Answer
 from .forms import QuestionForm, AnswerForm
@@ -10,10 +11,19 @@ from .forms import QuestionForm, AnswerForm
 
 def index(request):
 	page = request.GET.get('page', '1')  # 페이지
+	kw = request.GET.get('kw', '')  # 검색어
 	question_list = Question.objects.order_by('-create_date')
+	if kw:
+		question_list = question_list.filter(
+			Q(subject__icontains=kw) |  # 제목 검색
+			Q(content__icontains=kw) |  # 내용 검색
+			Q(answer__content__icontains=kw) |  # 답변 내용 검색
+			Q(author__username__icontains=kw) |  # 질문 글쓴이 검색
+			Q(answer__author__username__icontains=kw)  # 답변 글쓴이 검색
+		).distinct()
 	paginator = Paginator(question_list, 10)  # 페이지당 10개씩 보여주기
 	page_obj = paginator.get_page(page)
-	context = {'question_list': page_obj}
+	context = {'question_list': page_obj, 'page': page, 'kw': kw}
 	return render(request, 'SiteExer/question_list.html', context)
 
 
@@ -89,7 +99,7 @@ def answer_create(request, question_id):
 			answer.create_date = timezone.now()
 			answer.question = question
 			answer.save()
-			return redirect('SiteExer:detail', question_id=question.id)
+			return redirect(f"{resolve_url('SiteExer:detail', question_id=question.id)}#answer_{answer.id}")
 	else:
 		form = AnswerForm()
 	context = {'question': question, 'form': form}
@@ -108,7 +118,7 @@ def answer_modify(request, answer_id):
 			answer = form.save(commit=False)
 			answer.modify_date = timezone.now()
 			answer.save()
-			return redirect('SiteExer:detail', question_id=answer.question.id)
+			return redirect(f"{resolve_url('SiteExer:detail', question_id=answer.question.id)}#answer_{answer.id}")
 	else:
 		form = AnswerForm(instance=answer)
 	context = {'answer': answer, 'form': form}
@@ -132,4 +142,4 @@ def answer_vote(request, answer_id):
 		messages.error(request, '본인이 작성한 글은 추천할수 없습니다')
 	else:
 		answer.voter.add(request.user)
-	return redirect('SiteExer:detail', question_id=answer.question.id)
+	return redirect(f"{resolve_url('SiteExer:detail', question_id=answer.question.id)}#answer_{answer.id}")
